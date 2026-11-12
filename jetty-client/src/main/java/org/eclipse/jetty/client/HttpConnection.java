@@ -113,13 +113,30 @@ public abstract class HttpConnection implements Connection, Attachable
             request.path(path);
         }
 
-        if (proxy instanceof HttpProxy && !HttpClient.isSchemeSecure(request.getScheme()))
+        boolean applyProxyAuthentication = false;
+        if (proxy instanceof HttpProxy)
         {
-            URI uri = request.getURI();
-            if (uri != null)
+            HttpProxy httpProxy = (HttpProxy)proxy;
+            // The CONNECT request that establishes the tunnel is sent to the proxy,
+            // while the other requests are tunnelled to the server.
+            boolean tunnelled = httpProxy.requiresTunnel(destination.getOrigin()) && !HttpProxy.isTunnelRequest(request);
+            if (!tunnelled)
             {
-                path = uri.toString();
-                request.path(path);
+                if (!HttpClient.isSchemeSecure(request.getScheme()))
+                {
+                    URI uri = request.getURI();
+                    if (uri != null)
+                    {
+                        path = uri.toString();
+                        request.path(path);
+                    }
+                }
+
+                ((HttpRequest)request).httpProxy(httpProxy);
+
+                // Send the proxy credentials only when not tunnelled,
+                // otherwise proxy credentials are leaked to the server.
+                applyProxyAuthentication = true;
             }
         }
 
@@ -176,7 +193,8 @@ public abstract class HttpConnection implements Connection, Attachable
             request.header(HttpHeader.COOKIE.asString(), cookies.toString());
 
         // Authentication
-        applyProxyAuthentication(request, proxy);
+        if (applyProxyAuthentication)
+            applyProxyAuthentication(request, proxy);
         applyRequestAuthentication(request);
     }
 

@@ -55,7 +55,7 @@ public class WWWAuthenticationProtocolHandler extends AuthenticationProtocolHand
     @Override
     public boolean accept(Request request, Response response)
     {
-        return response.getStatus() == HttpStatus.UNAUTHORIZED_401;
+        return response.getStatus() == HttpStatus.UNAUTHORIZED_401 && !HttpProxy.isTunnelRequest(request);
     }
 
     @Override

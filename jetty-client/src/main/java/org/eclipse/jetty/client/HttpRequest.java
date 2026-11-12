@@ -90,6 +90,7 @@ public class HttpRequest implements Request
     private Supplier<HttpFields> trailers;
     private Object tag;
     private boolean normalized;
+    private HttpProxy httpProxy;
 
     protected HttpRequest(HttpClient client, HttpConversation conversation, URI uri)
     {
@@ -844,6 +845,21 @@ public class HttpRequest implements Request
         boolean result = normalized;
         normalized = true;
         return result;
+    }
+
+    /**
+     * @return the {@link HttpProxy} this request has been sent to,
+     * or null if this request has not been sent to a proxy
+     * (either sent directly to the server, or tunnelled to the server)
+     */
+    HttpProxy getHttpProxy()
+    {
+        return httpProxy;
+    }
+
+    void httpProxy(HttpProxy httpProxy)
+    {
+        this.httpProxy = httpProxy;
     }
 
     private String buildQuery()

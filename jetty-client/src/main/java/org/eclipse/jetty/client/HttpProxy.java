@@ -44,6 +44,7 @@ import org.eclipse.jetty.util.ssl.SslContextFactory;
 public class HttpProxy extends ProxyConfiguration.Proxy
 {
     private static final Logger LOG = Log.getLogger(HttpProxy.class);
+    private static final String TUNNEL_ATTRIBUTE = HttpProxy.class.getName() + ".tunnel";
 
     public HttpProxy(String host, int port)
     {
@@ -71,6 +72,37 @@ public class HttpProxy extends ProxyConfiguration.Proxy
     {
         String scheme = isSecure() ? HttpScheme.HTTPS.asString() : HttpScheme.HTTP.asString();
         return URI.create(new Origin(scheme, getAddress()).asString());
+    }
+
+    /**
+     * <p>Returns whether tunneling is required to reach the given server {@link Origin}.</p>
+     * <p>Returns {@code true} when the server is secure, in which case the requests
+     * are tunnelled to the server via a {@code CONNECT} request sent to the proxy.</p>
+     *
+     * @param serverOrigin the server {@link Origin}
+     * @return true if tunneling is required to reach the server
+     */
+    boolean requiresTunnel(Origin serverOrigin)
+    {
+        return HttpClient.isSchemeSecure(serverOrigin.getScheme());
+    }
+
+    /**
+     * <p>Returns whether the given request is the {@code CONNECT} request
+     * (or one of its copies, for example to authenticate with the proxy)
+     * sent to the proxy to establish a tunnel to the server.</p>
+     *
+     * @param request the request to test
+     * @return true if the request is sent to the proxy to establish a tunnel
+     */
+    static boolean isTunnelRequest(Request request)
+    {
+        if (!(request instanceof HttpRequest))
+            return false;
+        if (!HttpMethod.CONNECT.is(request.getMethod()))
+            return false;
+        HttpConversation conversation = ((HttpRequest)request).getConversation();
+        return conversation.getAttribute(TUNNEL_ATTRIBUTE) != null;
     }
 
     private static class HttpProxyClientConnectionFactory implements ClientConnectionFactory
@@ -174,6 +206,9 @@ public class HttpProxy extends ProxyConfiguration.Proxy
 
             final HttpConversation conversation = ((HttpRequest)connect).getConversation();
             conversation.setAttribute(EndPoint.class.getName(), endPoint);
+            // Mark the conversation, so that the CONNECT request and its copies
+            // are known to be sent to the proxy, rather than to the server.
+            conversation.setAttribute(TUNNEL_ATTRIBUTE, Boolean.TRUE);
 
             connect.attribute(Connection.class.getName(), new ProxyConnection(destination, connection, promise));
 
