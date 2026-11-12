@@ -73,6 +73,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.DisabledOnJre;
 import org.junit.jupiter.api.condition.EnabledOnJre;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.JRE;
@@ -1406,6 +1407,7 @@ public class SslBytesServerTest extends SslBytesTest
     }
 
     @Test
+    @DisabledOnJre(value = JRE.JAVA_11, disabledReason = "Current JDK 11 updates (11.0.32) close the TLSv1.2 connection on a forbidden renegotiation without the ALERT record this byte-level test waits for (NPE at the record-type assertion); still runs on JDK 8")
     public void testRequestWithContentWithRenegotiationInMiddleOfContentWhenRenegotiationIsForbidden() throws Exception
     {
         assumeJavaVersionSupportsTLSRenegotiations();

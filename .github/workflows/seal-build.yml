@@ -1,0 +1,103 @@
+# Sealed-libraries build of jetty-client. Upstream builds 9.4.x on Jenkins only
+# (Jenkinsfile: jdk8, `mvn -Pci -V -B -e clean install -Dunix.socket.tmp=/tmp/unixsocket`),
+# so this workflow mirrors that main "Build / Test - JDK8" stage, scoped to
+# jetty-client and the modules it depends on (incl. its test-scope deps).
+name: seal-build
+
+on:
+  workflow_dispatch:
+    inputs:
+      test-filter:
+        description: "Surefire -Dtest selector; empty runs the full suite"
+        required: false
+        default: ""
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 48
+    env:
+      MAVEN_OPTS: -Xms2g -Xmx4g -Djava.awt.headless=true
+      LC_ALL: en_US.UTF-8
+      LANG: en_US.UTF-8
+      JAVA_TOOL_OPTIONS: -XX:-UseContainerSupport
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 8
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "8"
+
+      - name: Install Maven 3.9.9
+        run: |
+          curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-3.9.9/bin" >> "$GITHUB_PATH"
+          mkdir -p /tmp/unixsocket
+
+      - name: Build and test
+        run: |
+          set -o pipefail
+          COMMON="-Pci -V -B -e --no-transfer-progress -pl jetty-client -am -Dunix.socket.tmp=/tmp/unixsocket -Dspotbugs.skip=true -Dmaven.javadoc.skip=true -Dgpg.skip=true"
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            mvn $COMMON clean install -Dtest='${{ inputs.test-filter }}' -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false
+          else
+            mvn $COMMON clean install
+          fi
+
+      - name: Test results and skip reasons
+        if: always()
+        run: python3 .github/seal/surefire-summary.py .
+
+      - name: Upload jetty-client artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jetty-client-artifacts
+          if-no-files-found: error
+          path: |
+            jetty-client/target/jetty-client-*.jar
+            !jetty-client/target/jetty-client-*-sources.jar
+            !jetty-client/target/jetty-client-*-javadoc.jar
+            !jetty-client/target/jetty-client-*-tests.jar
+            !jetty-client/target/original-*.jar
+
+  # The release itself was built on JDK 11 (Build-Jdk 11.0.24), and jetty-client's
+  # SPNEGOAuthenticationTest is @DisabledOnJre(JAVA_8) ("only JDK 11 is able to run
+  # these tests"), so the jetty-client suite also runs on JDK 11.
+  client-jdk11:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      MAVEN_OPTS: -Xms2g -Xmx4g -Djava.awt.headless=true
+      LC_ALL: en_US.UTF-8
+      LANG: en_US.UTF-8
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 11
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "11"
+
+      - name: Install Maven 3.9.9
+        run: |
+          curl -fsSL https://archive.apache.org/dist/maven/maven-3/3.9.9/binaries/apache-maven-3.9.9-bin.tar.gz | tar -xz -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/apache-maven-3.9.9/bin" >> "$GITHUB_PATH"
+          mkdir -p /tmp/unixsocket
+
+      - name: Build upstream modules and test jetty-client on JDK 11
+        run: |
+          set -o pipefail
+          COMMON="-Pci -V -B -e --no-transfer-progress -Dunix.socket.tmp=/tmp/unixsocket -Dspotbugs.skip=true -Dmaven.javadoc.skip=true -Dgpg.skip=true"
+          mvn $COMMON clean install -pl jetty-client -am -DskipTests
+          if [ -n "${{ inputs.test-filter }}" ]; then
+            mvn $COMMON test -pl jetty-client -Dtest='${{ inputs.test-filter }}' -Dsurefire.failIfNoSpecifiedTests=false -DfailIfNoTests=false
+          else
+            mvn $COMMON test -pl jetty-client
+          fi
+
+      - name: Test results and skip reasons
+        if: always()
+        run: python3 .github/seal/surefire-summary.py .
